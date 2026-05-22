@@ -87,20 +87,31 @@ def render_preview_image(adjusted_rgba, palette_snapshots, export_settings):
     return img_2d, img_3d
 
 
-def export_current_model(adjusted_rgba, palette_snapshots, export_settings):
+def export_current_model(adjusted_rgba, palette_snapshots, export_settings, export_format):
     export_dir = Path("tmp_export")
     export_dir.mkdir(exist_ok=True)
 
     def dummy_progress(_msg: str) -> None:
         pass
 
-    out_file = export_dir / "Bambu_Color_Card.obj"
+    if export_format == "Grouped Bambu 3MF":
+        out_file = export_dir / "Bambu_Color_Card.3mf"
+        saved_paths = bcv.export_model(out_file, adjusted_rgba, palette_snapshots, export_settings, dummy_progress)
+        return Path(saved_paths[0]).read_bytes(), "Bambu_Color_Card.3mf", "model/3mf"
+
+    if export_format == "STL part set":
+        out_file = export_dir / "Bambu_Color_Card.stl"
+        zip_name = "Bambu_Color_Card_STL.zip"
+    else:
+        out_file = export_dir / "Bambu_Color_Card.obj"
+        zip_name = "Bambu_Color_Card_OBJ.zip"
+
     saved_paths = bcv.export_model(out_file, adjusted_rgba, palette_snapshots, export_settings, dummy_progress)
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in saved_paths:
             archive.write(path, path.name)
-    return mem_zip.getvalue(), "Bambu_Color_Card_OBJ.zip", "application/zip"
+    return mem_zip.getvalue(), zip_name, "application/zip"
 
 
 st.markdown(
@@ -242,6 +253,7 @@ for key, value in (
     ("frame_color_hex", "#000000"),
     ("color_count", 8),
     ("preview_mode", "Split View"),
+    ("export_format", "OBJ + MTL"),
     ("export_ready", False),
     ("last_export_signature", None),
 ):
@@ -377,6 +389,7 @@ else:
     export_signature = (
         export_settings,
         tuple(snapshot.rgb for snapshot in palette_snapshots),
+        st.session_state.export_format,
     )
     if st.session_state.last_export_signature != export_signature:
         st.session_state.export_ready = False
@@ -424,18 +437,29 @@ else:
 
 with st.container(key="floating_export"):
     can_export = st.session_state.original_rgba is not None and bool(palette_snapshots) and export_settings is not None
+    st.selectbox(
+        "Export format",
+        ("OBJ + MTL", "Grouped Bambu 3MF", "STL part set"),
+        key="export_format",
+        on_change=mark_export_stale,
+    )
+    download_label = {
+        "Grouped Bambu 3MF": "Download 3MF",
+        "STL part set": "Download STL",
+    }.get(st.session_state.export_format, "Download OBJ")
 
     if can_export and (
         not st.session_state.get("export_ready")
         or st.session_state.get("last_export_signature") != export_signature
         or "export_bytes" not in st.session_state
     ):
-        with st.spinner("Preparing OBJ..."):
+        with st.spinner(f"Preparing {st.session_state.export_format}..."):
             try:
                 export_bytes, export_name, export_mime = export_current_model(
                     st.session_state.adjusted_rgba,
                     palette_snapshots,
                     export_settings,
+                    st.session_state.export_format,
                 )
                 st.session_state.export_bytes = export_bytes
                 st.session_state.export_name = export_name
@@ -448,7 +472,7 @@ with st.container(key="floating_export"):
 
     if can_export and st.session_state.get("export_ready") and "export_bytes" in st.session_state:
         st.download_button(
-            label="Download OBJ",
+            label=download_label,
             data=st.session_state.export_bytes,
             file_name=st.session_state.export_name,
             mime=st.session_state.export_mime,
@@ -456,4 +480,4 @@ with st.container(key="floating_export"):
             type="primary",
         )
     else:
-        st.button("Download OBJ", use_container_width=True, disabled=True, type="primary")
+        st.button(download_label, use_container_width=True, disabled=True, type="primary")

@@ -1,69 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html>
+  <head>
+    <meta charset="UTF-8" />
     <title>Bambu Color Voxelizer Web</title>
-    
-    <!-- Load PyScript -->
-    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
-    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
-
+    <!-- Stlite engine sets up Streamlit without requiring a python server -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.73.0/build/stlite.css" />
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; margin: 0; height: 100vh; background-color: #1e1e1e; color: #fff;}
-        #sidebar { width: 320px; padding: 20px; background-color: #2d2d2d; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.5); z-index: 10;}
-        #main-view { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: #2c2c2c;}
-        #preview-img { max-width: 100%; max-height: 80vh; border: 1px solid #555; background: repeating-conic-gradient(#808080 0% 25%, #a0a0a0 0% 50%) 50% / 20px 20px; }
-        
-        .control-group { margin-bottom: 15px; }
-        label { display: block; font-size: 0.9em; margin-bottom: 5px; color: #ccc;}
-        input[type="number"], input[type="file"] { width: 100%; padding: 8px; box-sizing: border-box; background: #444; color: white; border: 1px solid #555; border-radius: 4px;}
-        button { width: 100%; padding: 10px; background-color: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px;}
-        button:hover { background-color: #106ebe; }
-        button:disabled { background-color: #555; cursor: not-allowed; }
-        #status { margin-top: 15px; font-size: 0.85em; color: #aaa; padding: 10px; background: #222; border-radius: 4px;}
+      [data-testid="stDeployButton"], [data-testid="stAppDeployButton"],
+      .stDeployButton, .stAppDeployButton, button[title="Deploy"], [aria-label="Deploy"] {
+        display: none !important;
+      }
     </style>
-</head>
-<body>
-
-    <div id="sidebar">
-        <h2>Color Voxelizer</h2>
-        
-        <div class="control-group">
-            <label>1. Upload Image</label>
-            <input type="file" id="file-upload" accept="image/*">
-        </div>
-
-        <div class="control-group">
-            <label>Max Size X (mm)</label>
-            <input type="number" id="max-x" value="85.6" step="0.1">
-        </div>
-
-        <div class="control-group">
-            <label>Number of Colors</label>
-            <input type="number" id="color-count" value="4" min="1" max="16">
-        </div>
-
-        <button id="update-btn">2. Update Palette & Preview</button>
-        <button id="export-btn" disabled>3. Export 3MF</button>
-
-        <div id="status">Status: Waiting for PyScript to load...</div>
-    </div>
-
-    <div id="main-view">
-        <img id="preview-img" style="display: none;" />
-        <p id="placeholder-text" style="color: #666; font-size: 1.2rem;">Top-Down Preview</p>
-    </div>
-
-    <!-- Configure Python Environment -->
-    <py-config>
-        packages = ["numpy", "Pillow", "opencv-python"]
-        [[fetch]]
-        files = ["core.py"]
-    </py-config>
-
-    <!-- Execute Logic -->
-    <script type="py" src="./main.py"></script>
-
-</body>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.73.0/build/stlite.js"></script>
+    <script>
+      stlite.mount(
+        {
+          // Your exact Python dependencies
+          requirements: ["numpy", "Pillow", "opencv-python"],
+          entrypoint: "app.py",
+          files: {
+            "app.py": { url: "app.py?v=20260522-obj-label-6" }, // Updated version tag
+            // Fetches directly from your public GitHub repository
+            "bambu_color_voxelizer.py": { url: "bambu_color_voxelizer.py?v=20260522-v03" },
+            "InputExample.png": { url: "InputExample.png" } 
+          }
+        },
+        document.getElementById("root")
+      );
+    </script>
+  </body>
 </html>

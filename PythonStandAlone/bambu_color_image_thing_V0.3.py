@@ -1,13 +1,13 @@
-"""Bambu two-layer color card OBJ generator.
+"""Bambu two-layer color card model generator.
 
 Dependencies:
     pip install numpy pillow opencv-python
 
 Run:
-    python bambu_color_voxelizer.py
+    python bambu_color_image_thing_V0.4.py
 
 The app loads an image, detects/edit colors, previews the quantized palette,
-and exports a welded triangle-only OBJ plus MTL for two-height color printing.
+and exports OBJ + MTL, grouped Bambu 3MF, or STL parts for two-height color printing.
 """
 
 from __future__ import annotations
@@ -49,7 +49,8 @@ except ImportError:
 ALPHA_VISIBLE_THRESHOLD = 10
 DEFAULT_PREVIEW_BG_LIGHT = np.array([238, 238, 238], dtype=np.uint8)
 DEFAULT_PREVIEW_BG_DARK = np.array([205, 205, 205], dtype=np.uint8)
-__version__ = "0.2"
+PREVIEW_3D_Z_SCALE = 0.35
+__version__ = "0.4"
 
 try:
     LANCZOS = Image.Resampling.LANCZOS
@@ -1113,11 +1114,11 @@ def build_3d_preview(
             if z_curr <= 0:
                 continue
 
-            mat_idx = m_small[y, x]
-            if mat_idx < 0 or mat_idx >= len(palette_rgb):
+            grid_mat_idx = m_small[y, x]
+            if grid_mat_idx < 0 or grid_mat_idx >= len(palette_rgb):
                 base_rgb = palette_rgb[0] if palette_rgb else (128, 128, 128)
             else:
-                base_rgb = palette_rgb[mat_idx]
+                base_rgb = palette_rgb[grid_mat_idx]
 
             v0 = project(x, y, z_curr)
             v1 = project(x + 1, y, z_curr)
@@ -1187,6 +1188,7 @@ class BambuColorVoxelizerApp:
         self.frame_rgb: tuple[int, int, int] = (0, 0, 0)
         self.color_count_var = tk.IntVar(value=4)
         self.color_count_var.trace_add("write", lambda *_args: self.highlight_update_palette_button())
+        self.export_format_var = tk.StringVar(value="OBJ + MTL")
         
         self.status_var = tk.StringVar(value="Load an image to begin.")
 
@@ -1301,7 +1303,18 @@ class BambuColorVoxelizerApp:
         row = self._add_object_controls(controls, row)
         row = self._add_color_controls(controls, row)
 
-        ttk.Button(controls, text="Export Grouped 3MF", command=self.start_export).grid(
+        ttk.Label(controls, text="Export format").grid(row=row, column=0, sticky="ew", pady=(12, 2))
+        row += 1
+        self.export_format_combo = ttk.Combobox(
+            controls,
+            textvariable=self.export_format_var,
+            values=("OBJ + MTL", "Grouped Bambu 3MF", "STL part set"),
+            state="readonly",
+        )
+        self.export_format_combo.grid(row=row, column=0, sticky="ew", pady=(0, 6))
+        row += 1
+
+        ttk.Button(controls, text="Export Model", command=self.start_export).grid(
             row=row, column=0, sticky="ew", pady=(12, 6)
         )
         self.export_button = controls.grid_slaves(row=row, column=0)[0]
@@ -1765,7 +1778,8 @@ class BambuColorVoxelizerApp:
                         settings,
                     )
 
-                    image_3d = build_3d_preview(heights, materials, palette_rgb, canvas_w, canvas_h)
+                    preview_heights = (heights * PREVIEW_3D_Z_SCALE).astype(heights.dtype)
+                    image_3d = build_3d_preview(preview_heights, materials, palette_rgb, canvas_w, canvas_h)
                     
                     if current_tab == "Angled 3D View":
                         self.preview_photo_3d = ImageTk.PhotoImage(image_3d)
@@ -2022,15 +2036,36 @@ class BambuColorVoxelizerApp:
             messagebox.showerror("Export settings error", str(exc))
             return
 
-        path = filedialog.asksaveasfilename(
-            title="Save model",
-            defaultextension=".3mf",
-            filetypes=[
+        selected_format = self.export_format_var.get()
+        if selected_format == "Grouped Bambu 3MF":
+            default_extension = ".3mf"
+            filetypes = [
                 ("Grouped Bambu 3MF", "*.3mf"),
+                ("Wavefront OBJ", "*.obj"),
                 ("STL part set", "*.stl"),
+                ("All files", "*.*"),
+            ]
+        elif selected_format == "STL part set":
+            default_extension = ".stl"
+            filetypes = [
+                ("STL part set", "*.stl"),
+                ("Grouped Bambu 3MF", "*.3mf"),
                 ("Wavefront OBJ", "*.obj"),
                 ("All files", "*.*"),
-            ],
+            ]
+        else:
+            default_extension = ".obj"
+            filetypes = [
+                ("Wavefront OBJ", "*.obj"),
+                ("Grouped Bambu 3MF", "*.3mf"),
+                ("STL part set", "*.stl"),
+                ("All files", "*.*"),
+            ]
+
+        path = filedialog.asksaveasfilename(
+            title=f"Save model as {selected_format}",
+            defaultextension=default_extension,
+            filetypes=filetypes,
         )
         if not path:
             return
@@ -2038,6 +2073,8 @@ class BambuColorVoxelizerApp:
         self.export_queue = queue.Queue()
         adjusted_snapshot = self.adjusted_rgba.copy()
         export_path = Path(path)
+        if export_path.suffix.lower() not in {".obj", ".3mf", ".stl"}:
+            export_path = export_path.with_suffix(default_extension)
 
         self.export_button.configure(state="disabled")
         self.status_var.set("Starting export...")
@@ -2084,9 +2121,14 @@ class BambuColorVoxelizerApp:
                 self.status_var.set(f"Export complete: {primary_path.name}")
                 self.export_button.configure(state="normal")
                 saved_text = "\n".join(str(path) for path in saved_paths)
+                guidance = ""
+                if primary_path.suffix.lower() == ".obj":
+                    guidance = "\n\nDrag the .obj file along with its matching .mtl into Bambu Studio to map your filaments."
+                elif primary_path.suffix.lower() == ".3mf":
+                    guidance = "\n\nOpen the .3mf in Bambu Studio; the grouped parts are assigned to extruders by color."
                 messagebox.showinfo(
                     "Export complete",
-                    f"Saved:\n{saved_text}",
+                    f"Saved:\n{saved_text}{guidance}",
                 )
                 keep_polling = False
             elif kind == "error":
